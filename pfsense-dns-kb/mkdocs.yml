@@ -1,0 +1,40 @@
+site_name: pfSense DNS Knowledge Base
+site_description: Local offline Markdown KB for pfSense DNS Resolver/Forwarder
+docs_dir: .
+theme:
+  name: readthedocs
+nav:
+  - Home: README.md
+  - Index: INDEX.md
+  - pfSense DNS:
+      - DNS: docs/pfsense-dns/dns-index.md
+      - Resolution Process: docs/pfsense-dns/resolution-process.md
+      - Resolver: docs/pfsense-dns/resolver.md
+      - Forwarder: docs/pfsense-dns/forwarder.md
+      - Rebinding: docs/pfsense-dns/rebinding.md
+      - Wildcards: docs/pfsense-dns/wildcards.md
+      - Forwarder Overrides: docs/pfsense-dns/forwarder-overrides.md
+  - pfSense Ops:
+      - DNS Lookup: docs/pfsense-ops/diag-dns.md
+      - Interfaces and DNS: docs/pfsense-ops/interfaces-and-dns.md
+      - Troubleshooting DNS: docs/pfsense-ops/troubleshooting-dns.md
+      - DNS Cache: docs/pfsense-ops/troubleshooting-dns-cache.md
+      - DNS Queries: docs/pfsense-ops/troubleshooting-dns-queries.md
+  - Guides:
+      - DNS over TLS: docs/pfsense-guides/dns-over-tls.md
+      - Block External DNS: docs/pfsense-guides/dns-block-external.md
+      - Redirect DNS: docs/pfsense-guides/dns-redirect.md
+  - Upstream:
+      - Unbound Index: docs/upstream-dns/unbound-index.md
+      - unbound.conf: docs/upstream-dns/unbound-conf.md
+      - dnsmasq Doc: docs/upstream-dns/dnsmasq-doc.md
+      - dnsmasq Man: docs/upstream-dns/dnsmasq-man.md
+  - Community:
+      - Blog DoT: docs/community/blog-dns-over-tls.md
+      - Forum DoT Cert: docs/community/forum-unbound-dot-cert.md
+      - Forum DoT: docs/community/forum-dns-over-tls.md
+  - Notes:
+      - Resolver vs Forwarder: notes/resolver-vs-forwarder.md
+      - DNS over TLS: notes/dns-over-tls.md
+      - DHCP DNS Registration: notes/dhcp-dns-registration.md
+      - DNS Rebinding: notes/dns-rebinding.md

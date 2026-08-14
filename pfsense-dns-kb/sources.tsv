@@ -1,0 +1,23 @@
+url	category	priority	pfsense_version_notes	slug
+https://docs.netgate.com/pfsense/en/latest/services/dns/index.html	pfsense-dns	1		dns-index
+https://docs.netgate.com/pfsense/en/latest/services/dns/resolution-process.html	pfsense-dns	1		resolution-process
+https://docs.netgate.com/pfsense/en/latest/services/dns/resolver.html	pfsense-dns	1	DNS Resolver = Unbound; default since pfSense 2.3	resolver
+https://docs.netgate.com/pfsense/en/latest/services/dns/forwarder.html	pfsense-dns	1	DNS Forwarder = dnsmasq	forwarder
+https://docs.netgate.com/pfsense/en/latest/services/dns/rebinding.html	pfsense-dns	2		rebinding
+https://docs.netgate.com/pfsense/en/latest/services/dns/wildcards.html	pfsense-dns	3		wildcards
+https://docs.netgate.com/pfsense/en/latest/services/dns/forwarder-overrides.html	pfsense-dns	2	Host Overrides / Domain Overrides (DNS Forwarder)	forwarder-overrides
+https://docs.netgate.com/pfsense/en/latest/diagnostics/dns.html	pfsense-ops	3		diag-dns
+https://docs.netgate.com/pfsense/en/latest/multiwan/interfaces-and-dns.html	pfsense-ops	2		interfaces-and-dns
+https://docs.netgate.com/pfsense/en/latest/troubleshooting/dns.html	pfsense-ops	2		troubleshooting-dns
+https://docs.netgate.com/pfsense/en/latest/troubleshooting/dns-cache.html	pfsense-ops	3		troubleshooting-dns-cache
+https://docs.netgate.com/pfsense/en/latest/troubleshooting/dns-queries.html	pfsense-ops	3		troubleshooting-dns-queries
+https://docs.netgate.com/pfsense/en/latest/recipes/dns-over-tls.html	pfsense-guides	1	DNS over TLS is Resolver-only; DNSSEC off in forwarding mode	dns-over-tls
+https://docs.netgate.com/pfsense/en/latest/recipes/dns-block-external.html	pfsense-guides	2		dns-block-external
+https://docs.netgate.com/pfsense/en/latest/recipes/dns-redirect.html	pfsense-guides	2		dns-redirect
+https://unbound.docs.nlnetlabs.nl/en/latest/	upstream-dns	1	Unbound (DNS Resolver) upstream docs index	unbound-index
+https://unbound.docs.nlnetlabs.nl/en/latest/manpages/unbound.conf.html	upstream-dns	1	Unbound unbound.conf(5) reference	unbound-conf
+https://thekelleys.org.uk/dnsmasq/doc.html	upstream-dns	2	dnsmasq (DNS Forwarder) overview	dnsmasq-doc
+https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html	upstream-dns	1	dnsmasq man page	dnsmasq-man
+https://www.netgate.com/blog/dns-over-tls-with-pfsense	community	2	Netgate blog: DNS over TLS with pfSense	blog-dns-over-tls
+https://forum.netgate.com/topic/155225/pfsense-unbound-dot-additional-setting-needed	community	1	Forum: Unbound DoT cert-validation nuance (must set TLS hostname)	forum-unbound-dot-cert
+https://forum.netgate.com/topic/136076/how-to-configure-dns-over-tls-in-2-4-4	community	3	Forum: DNS over TLS discussion (DNSSEC vs forwarding)	forum-dns-over-tls

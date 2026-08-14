@@ -1,0 +1,225 @@
+{
+  "generated": "2026-08-13",
+  "docs": [
+    {
+      "path": "docs/community/blog-dns-over-tls.md",
+      "title": "DNS over TLS with pfSense",
+      "category": "community",
+      "priority": "2",
+      "summary": "This is the first blog post in our new series, _Tips and Tricks_.",
+      "source_url": "https://www.netgate.com/blog/dns-over-tls-with-pfsense",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "Netgate blog: DNS over TLS with pfSense"
+    },
+    {
+      "path": "docs/community/forum-dns-over-tls.md",
+      "title": "How to configure DNS over TLS in 2.4.4? | Netgate Forum",
+      "category": "community",
+      "priority": "3",
+      "summary": "Your browser does not seem to support JavaScript. As a result, your viewing experience will be diminished, and you have been placed in **read-only mode**.",
+      "source_url": "https://forum.netgate.com/topic/136076/how-to-configure-dns-over-tls-in-2-4-4",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "Forum: DNS over TLS discussion (DNSSEC vs forwarding)"
+    },
+    {
+      "path": "docs/community/forum-unbound-dot-cert.md",
+      "title": "pfSense Unbound DoT - additional setting needed? | Netgate Forum",
+      "category": "community",
+      "priority": "1",
+      "summary": "Your browser does not seem to support JavaScript. As a result, your viewing experience will be diminished, and you have been placed in **read-only mode**.",
+      "source_url": "https://forum.netgate.com/topic/155225/pfsense-unbound-dot-additional-setting-needed",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "Forum: Unbound DoT cert-validation nuance (must set TLS hostname)"
+    },
+    {
+      "path": "docs/pfsense-dns/dns-index.md",
+      "title": "DNS | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "1",
+      "summary": "DNS, or Domain Name System, is the mechanism by which a network device resolves a name like `www.example.com` to an IP address such as `198.51.100.25`, or vice ",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/index.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-dns/forwarder-overrides.md",
+      "title": "Host Overrides | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "2",
+      "summary": "Host override entries provide a means to configure customized DNS entries. The configuration is identical to [Host Overrides](resolver-host-overrides.html#dns-h",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/forwarder-overrides.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "Host Overrides / Domain Overrides (DNS Forwarder)"
+    },
+    {
+      "path": "docs/pfsense-dns/forwarder.md",
+      "title": "DNS Forwarder | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "1",
+      "summary": "The DNS Forwarder in pfSense\u00ae software utilizes the `dnsmasq` daemon, which is a caching DNS forwarder.",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/forwarder.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "DNS Forwarder = dnsmasq"
+    },
+    {
+      "path": "docs/pfsense-dns/rebinding.md",
+      "title": "DNS Rebinding Protections | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "2",
+      "summary": "pfSense\u00ae software includes built in methods of protection against [DNS rebinding attacks](https://en.wikipedia.org/wiki/DNS_rebinding).",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/rebinding.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-dns/resolution-process.md",
+      "title": "DNS Resolution Process | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "1",
+      "summary": "Every DNS query must be resolved. Depending on which DNS service is in use on the firewall and its configuration, this resolution may happen locally, or it may ",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/resolution-process.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-dns/resolver.md",
+      "title": "DNS Resolver | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "1",
+      "summary": "The DNS Resolver in pfSense\u00ae software utilizes `unbound`, which is a validating, recursive, caching DNS resolver capable of using DNSSEC, DNS over TLS, and a wi",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/resolver.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "DNS Resolver = Unbound; default since pfSense 2.3"
+    },
+    {
+      "path": "docs/pfsense-dns/wildcards.md",
+      "title": "Creating Wildcard Records in DNS Forwarder/Resolver | pfSense Documentation",
+      "category": "pfsense-dns",
+      "priority": "3",
+      "summary": "A wildcard DNS record resolves `<anything>.example.com` to a single IP address, which can be useful in certain cases.",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/services/dns/wildcards.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-guides/dns-block-external.md",
+      "title": "Blocking External Client DNS Queries | pfSense Documentation",
+      "category": "pfsense-guides",
+      "priority": "2",
+      "summary": "This procedure configures the firewall to block DNS requests from local clients to servers outside the local network. With no other accessible DNS servers, clie",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/recipes/dns-block-external.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-guides/dns-over-tls.md",
+      "title": "Configuring DNS over TLS | pfSense Documentation",
+      "category": "pfsense-guides",
+      "priority": "1",
+      "summary": "Several popular public DNS providers provide encrypted DNS service using DNS over TLS. This prevents intermediate parties from viewing the content of DNS querie",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/recipes/dns-over-tls.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "DNS over TLS is Resolver-only; DNSSEC off in forwarding mode"
+    },
+    {
+      "path": "docs/pfsense-guides/dns-redirect.md",
+      "title": "Redirecting Client DNS Requests | pfSense Documentation",
+      "category": "pfsense-guides",
+      "priority": "2",
+      "summary": "To restrict client DNS to only the DNS Resolver or Forwarder on pfSense\u00ae software, use a port forward to capture all client DNS requests.",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/recipes/dns-redirect.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-ops/diag-dns.md",
+      "title": "DNS Lookup | pfSense Documentation",
+      "category": "pfsense-ops",
+      "priority": "3",
+      "summary": "**Diagnostics > DNS Lookup** performs simple forward and reverse DNS queries. These queries obtain information about an IP address or hostname and also test the",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/diagnostics/dns.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-ops/interfaces-and-dns.md",
+      "title": "Interface and DNS Configuration | pfSense Documentation",
+      "category": "pfsense-ops",
+      "priority": "2",
+      "summary": "The first two items to configure for Multi-WAN are interfaces and DNS.",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/multiwan/interfaces-and-dns.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-ops/troubleshooting-dns-cache.md",
+      "title": "Troubleshooting the DNS Cache | pfSense Documentation",
+      "category": "pfsense-ops",
+      "priority": "3",
+      "summary": "To fully clear the DNS Resolver cache, restart the `unbound` daemon:",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/troubleshooting/dns-cache.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-ops/troubleshooting-dns-queries.md",
+      "title": "Troubleshooting DNS Queries | pfSense Documentation",
+      "category": "pfsense-ops",
+      "priority": "3",
+      "summary": "An administrator may need to troubleshoot issues with certain queries to the DNS Resolver (Unbound) or DNS Forwarder (dnsmasq). In such cases it can be helpful ",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/troubleshooting/dns-queries.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/pfsense-ops/troubleshooting-dns.md",
+      "title": "Troubleshooting DNS Resolution Issues | pfSense Documentation",
+      "category": "pfsense-ops",
+      "priority": "2",
+      "summary": "Working DNS resolution is critical for functional access to the Internet.",
+      "source_url": "https://docs.netgate.com/pfsense/en/latest/troubleshooting/dns.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": ""
+    },
+    {
+      "path": "docs/upstream-dns/dnsmasq-doc.md",
+      "title": "Dnsmasq - network services for small networks.",
+      "category": "upstream-dns",
+      "priority": "2",
+      "summary": "| ![](http://www.thekelleys.org.uk/dnsmasq/images/icon.png)",
+      "source_url": "https://thekelleys.org.uk/dnsmasq/doc.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "dnsmasq (DNS Forwarder) overview"
+    },
+    {
+      "path": "docs/upstream-dns/dnsmasq-man.md",
+      "title": "Man page of DNSMASQ",
+      "category": "upstream-dns",
+      "priority": "1",
+      "summary": "Section: Maintenance Commands (8)",
+      "source_url": "https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "dnsmasq man page"
+    },
+    {
+      "path": "docs/upstream-dns/unbound-conf.md",
+      "title": "unbound.conf(5) \u2014 Unbound 1.25.2 documentation",
+      "category": "upstream-dns",
+      "priority": "1",
+      "summary": "**unbound.conf**",
+      "source_url": "https://unbound.docs.nlnetlabs.nl/en/latest/manpages/unbound.conf.html",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "Unbound unbound.conf(5) reference"
+    },
+    {
+      "path": "docs/upstream-dns/unbound-index.md",
+      "title": "Unbound by NLnet Labs \u2014 Unbound 1.25.2 documentation",
+      "category": "upstream-dns",
+      "priority": "1",
+      "summary": "Unbound is a validating, recursive, caching DNS resolver. It is designed to be fast and lean and incorporates modern features based on open standards.",
+      "source_url": "https://unbound.docs.nlnetlabs.nl/en/latest/",
+      "fetched_date": "2026-08-13",
+      "pfsense_version_notes": "Unbound (DNS Resolver) upstream docs index"
+    }
+  ]
+}
