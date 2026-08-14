@@ -1,0 +1,43 @@
+site_name: pfSense KEA DHCP Knowledge Base
+# NOTE: This MkDocs config is OPTIONAL. It requires `pip install mkdocs`.
+# Build the static site with:  mkdocs build   (output goes to site/)
+docs_dir: docs
+
+nav:
+  - Home: ../README.md
+  - Index: ../INDEX.md
+  - Concepts & Core (pfsense-core):
+      - DHCP (index): pfsense-core/dhcp-index.md
+      - Kea Settings Tab: pfsense-core/kea-settings.md
+      - DHCPv4 Server: pfsense-core/ipv4.md
+      - DHCPv6 Server: pfsense-core/ipv6.md
+      - DHCPv4 & DHCPv6 Relay: pfsense-core/relay.md
+      - Using DHCP Search Domains on Windows DHCP Clients: pfsense-core/client-search-domain.md
+      - Static Mappings Inside DHCP Pools: pfsense-core/mappings-in-pools.md
+  - Operations (pfsense-ops):
+      - Advanced Networking (Server Backend): pfsense-ops/advanced-networking.md
+      - DHCPv4 Status: pfsense-ops/monitoring-status-dhcp-ipv4.md
+      - DHCPv6 Status: pfsense-ops/monitoring-status-dhcp-ipv6.md
+      - DHCP Logs: pfsense-ops/monitoring-logs-dhcp.md
+      - Troubleshooting DHCPv6 Client XID Mismatches: pfsense-ops/troubleshooting-dhcpv6-xid-mismatch.md
+      - Troubleshooting Offline DHCP Leases: pfsense-ops/troubleshooting-dhcp-offline-leases.md
+  - High Availability (pfsense-ha):
+      - Converting High Availability DHCP from ISC to Kea: pfsense-ha/ha-kea-convert.md
+  - Upstream Kea (upstream-kea):
+      - Kea Administrator Reference Manual: upstream-kea/kea-arm-index.md
+      - Kea High Availability (404 stub): upstream-kea/kea-ha.md
+      - 6. Kea Configuration: upstream-kea/kea-config.md
+      - 8. The DHCPv4 Server: upstream-kea/kea-dhcp4.md
+      - Migrating using the Migration Assistant: upstream-kea/keama-migration.md
+      - Migrating to Kea from ISC DHCP: upstream-kea/isc-dhcp-migration.md
+      - Kea HA vs ISC DHCP Failover: upstream-kea/kea-ha-vs-isc.md
+      - Kea Configuration Introduction: upstream-kea/kea-config-sections.md
+  - Community:
+      - Adding Custom Configuration in Kea DHCP Server: community/forum-custom-config-196513.md
+      - switch over from ISC DHCP to Kea DHCP: community/forum-switch-188430.md
+      - 24.08 Improvements to Kea DHCP: community/blog-improvements-kea-dhcp.md
+      - Netgate Adds Kea DHCP to 23.09: community/blog-kea-23-09.md
+  - Notes:
+      - Kea HA vs ISC: ../notes/kea-ha-vs-isc.md
+      - Kea Custom JSON Mapping: ../notes/kea-custom-json.md
+      - Kea DNS Registration: ../notes/kea-dns-registration.md

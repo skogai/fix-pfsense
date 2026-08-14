@@ -1,0 +1,158 @@
+[
+  {
+    "path": "docs/pfsense-core/client-search-domain.md",
+    "title": "Using DHCP Search Domains on Windows DHCP Clients",
+    "category": "pfsense-core",
+    "summary": "How to push DNS search domains to Windows clients through DHCP options."
+  },
+  {
+    "path": "docs/pfsense-core/dhcp-index.md",
+    "title": "DHCP",
+    "category": "pfsense-core",
+    "summary": "Index/overview of pfSense DHCP docs, including choosing the ISC vs Kea backend."
+  },
+  {
+    "path": "docs/pfsense-core/ipv4.md",
+    "title": "DHCPv4 Server",
+    "category": "pfsense-core",
+    "summary": "Per-interface Kea DHCPv4 configuration: pools, options, static mappings, and failover."
+  },
+  {
+    "path": "docs/pfsense-core/ipv6.md",
+    "title": "DHCPv6 Server",
+    "category": "pfsense-core",
+    "summary": "Per-interface Kea DHCPv6 configuration, including Router Advertisement coordination."
+  },
+  {
+    "path": "docs/pfsense-core/kea-settings.md",
+    "title": "Kea Settings Tab",
+    "category": "pfsense-core",
+    "summary": "Global Kea options: DNS Resolver registration, High Availability (hot standby), optional TLS, and custom JSON snippets."
+  },
+  {
+    "path": "docs/pfsense-core/mappings-in-pools.md",
+    "title": "Static Mappings Inside DHCP Pools",
+    "category": "pfsense-core",
+    "summary": "Reserve fixed IP addresses for clients within an existing dynamic pool range."
+  },
+  {
+    "path": "docs/pfsense-core/relay.md",
+    "title": "DHCPv4 & DHCPv6 Relay",
+    "category": "pfsense-core",
+    "summary": "Forward DHCP(v4/v6) requests to an upstream or external DHCP server via the relay agent."
+  },
+  {
+    "path": "docs/pfsense-ops/advanced-networking.md",
+    "title": "Networking",
+    "category": "pfsense-ops",
+    "summary": "System > Advanced > Networking settings, including the Server Backend (ISC/Kea) selector."
+  },
+  {
+    "path": "docs/pfsense-ops/monitoring-logs-dhcp.md",
+    "title": "DHCP Logs",
+    "category": "pfsense-ops",
+    "summary": "Where DHCP system logs live and how to read them when debugging."
+  },
+  {
+    "path": "docs/pfsense-ops/monitoring-status-dhcp-ipv4.md",
+    "title": "DHCPv4 Status",
+    "category": "pfsense-ops",
+    "summary": "View active DHCPv4 leases and the Kea/ISC high-availability failover status."
+  },
+  {
+    "path": "docs/pfsense-ops/monitoring-status-dhcp-ipv6.md",
+    "title": "DHCPv6 Status",
+    "category": "pfsense-ops",
+    "summary": "View active DHCPv6 leases and delegated prefixes."
+  },
+  {
+    "path": "docs/pfsense-ops/troubleshooting-dhcp-offline-leases.md",
+    "title": "Troubleshooting Offline DHCP Leases",
+    "category": "pfsense-ops",
+    "summary": "Why leases report as offline and how to resolve the condition."
+  },
+  {
+    "path": "docs/pfsense-ops/troubleshooting-dhcpv6-xid-mismatch.md",
+    "title": "Troubleshooting DHCPv6 Client XID Mismatches",
+    "category": "pfsense-ops",
+    "summary": "Diagnose relay/transaction-ID (XID) mismatches seen in DHCPv6."
+  },
+  {
+    "path": "docs/pfsense-ha/ha-kea-convert.md",
+    "title": "Converting High Availability DHCP from ISC to Kea",
+    "category": "pfsense-ha",
+    "summary": "Step-by-step conversion of HA DHCP from ISC to Kea, with a backend-difference table."
+  },
+  {
+    "path": "docs/upstream-kea/isc-dhcp-migration.md",
+    "title": "Migrating to Kea from ISC DHCP",
+    "category": "upstream-kea",
+    "summary": "ISC's general guidance for migrating from ISC DHCP to Kea."
+  },
+  {
+    "path": "docs/upstream-kea/kea-arm-index.md",
+    "title": "Kea Administrator Reference Manual",
+    "category": "upstream-kea",
+    "summary": "Landing/index page for the upstream Kea ARM documentation."
+  },
+  {
+    "path": "docs/upstream-kea/kea-config-sections.md",
+    "title": "Kea Configuration Introduction",
+    "category": "upstream-kea",
+    "summary": "Explains the structure and top-level sections of a Kea configuration file."
+  },
+  {
+    "path": "docs/upstream-kea/kea-config.md",
+    "title": "6. Kea Configuration",
+    "category": "upstream-kea",
+    "summary": "Upstream Kea ARM introduction to the Kea configuration system."
+  },
+  {
+    "path": "docs/upstream-kea/kea-dhcp4.md",
+    "title": "8. The DHCPv4 Server",
+    "category": "upstream-kea",
+    "summary": "Upstream Kea ARM reference for the Kea DHCPv4 server (hooks, options, config)."
+  },
+  {
+    "path": "docs/upstream-kea/kea-ha-vs-isc.md",
+    "title": "Kea High Availability vs. ISC DHCP Failover",
+    "category": "upstream-kea",
+    "summary": "Feature-by-feature comparison of Kea HA against ISC DHCP failover."
+  },
+  {
+    "path": "docs/upstream-kea/kea-ha.md",
+    "title": "Kea High Availability (HA) — Page Not Found (HTTP 404)",
+    "category": "upstream-kea",
+    "summary": "Known 404 stub; points to the Kea HA hooks chapter in the ARM. Expected/intentionally short."
+  },
+  {
+    "path": "docs/upstream-kea/keama-migration.md",
+    "title": "Migrating from ISC DHCP to Kea DHCP using the Migration Assistant",
+    "category": "upstream-kea",
+    "summary": "Using the KeaMA tool to convert ISC dhcpd configurations into Kea format."
+  },
+  {
+    "path": "docs/community/blog-improvements-kea-dhcp.md",
+    "title": "24.08 Sneak Peek: Improvements to Kea DHCP for Improved High Availability and Unbound DNS Resolution in pfSense® Software",
+    "category": "community",
+    "summary": "Netgate blog on 24.08 Kea HA improvements and Unbound DNS resolution."
+  },
+  {
+    "path": "docs/community/blog-kea-23-09.md",
+    "title": "Netgate Adds Kea DHCP to pfSense Plus Software Version 23.09",
+    "category": "community",
+    "summary": "Announcement introducing Kea DHCP in pfSense Plus 23.09."
+  },
+  {
+    "path": "docs/community/forum-custom-config-196513.md",
+    "title": "Adding Custom Configuration in Kea DHCP Server",
+    "category": "community",
+    "summary": "Community examples of pfSense 25.03 custom JSON config snippets for Kea."
+  },
+  {
+    "path": "docs/community/forum-switch-188430.md",
+    "title": "switch over from ISC DHCP to Kea DHCP",
+    "category": "community",
+    "summary": "Community discussion thread on migrating from ISC DHCP to Kea."
+  }
+]

@@ -1,0 +1,27 @@
+url	category	priority	pfsense_version_notes
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/index.html	pfsense-core	1	
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/kea-settings.html	pfsense-core	1	
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/ipv4.html	pfsense-core	1	
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/ipv6.html	pfsense-core	1	
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/relay.html	pfsense-core	2	
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/client-search-domain.html	pfsense-core	3	
+https://docs.netgate.com/pfsense/en/latest/services/dhcp/mappings-in-pools.html	pfsense-core	3	
+https://docs.netgate.com/pfsense/en/latest/config/advanced-networking.html	pfsense-ops	2	Server Backend selector under System > Advanced > Networking
+https://docs.netgate.com/pfsense/en/latest/monitoring/status/dhcp-ipv4.html	pfsense-ops	3	
+https://docs.netgate.com/pfsense/en/latest/monitoring/status/dhcp-ipv6.html	pfsense-ops	3	
+https://docs.netgate.com/pfsense/en/latest/monitoring/logs/dhcp.html	pfsense-ops	3	
+https://docs.netgate.com/pfsense/en/latest/troubleshooting/dhcpv6-xid-mismatch.html	pfsense-ops	3	
+https://docs.netgate.com/pfsense/en/latest/troubleshooting/dhcp-offline-leases.html	pfsense-ops	3	
+https://docs.netgate.com/pfsense/en/latest/recipes/high-availability-kea-convert.html	pfsense-ha	1	Kea HA requires Plus 24.11+/CE 2.8.0+; CE 2.7.2 lacks Kea HA
+https://kea.readthedocs.io/en/latest/index.html	upstream-kea	1	Kea ARM index
+https://kea.readthedocs.io/en/latest/arm/ha.html	upstream-kea	1	Kea High Availability
+https://kea.readthedocs.io/en/latest/arm/config.html	upstream-kea	2	Kea configuration introduction
+https://kea.readthedocs.io/en/latest/arm/dhcp4-srv.html	upstream-kea	2	Kea DHCPv4 server
+https://kb.isc.org/docs/migrating-from-isc-dhcp-to-kea-dhcp-using-the-migration-assistant	upstream-kea	1	KeaMA migration assistant
+https://www.isc.org/dhcp_migration/	upstream-kea	2	ISC migration guide
+https://kb.isc.org/docs/aa-01617	upstream-kea	1	Kea HA vs ISC DHCP failover comparison
+https://kb.isc.org/docs/kea-configuration-sections-explained	upstream-kea	2	Kea configuration sections explained
+https://forum.netgate.com/topic/196513/adding-custom-configuration-in-kea-dhcp-server-with-pfsense-25-03	community	1	Custom JSON config examples; version-sensitive (pfSense 25.03)
+https://forum.netgate.com/topic/188430/switch-over-from-isc-dhcp-to-kea-dhcp	community	2	Migration discussion thread
+https://www.netgate.com/blog/improvements-to-kea-dhcp	community	2	24.08 Kea HA improvements
+https://www.netgate.com/blog/netgate-adds-kea-dhcp-to-pfsense-plus-software-version-23.09-1	community	3	Kea introduced in pfSense Plus 23.09

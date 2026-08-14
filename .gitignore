@@ -1,0 +1,15 @@
+# Internal agent workspace
+.omo/
+.codegraph
+
+# Nested git repos
+**/.git/
+
+# Python
+__pycache__/
+*.pyc
+
+# Misc
+*.tmp
+site/
+.DS_Store
