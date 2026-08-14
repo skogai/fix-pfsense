@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "pfsense-local": {
+      "command": "python3.11",
+      "args": ["-m", "src.main"],
+      "cwd": "/home/skogix/.local/src/fix-pfsense/pfsense-mcp-server",
+      "env": {
+        "PFSENSE_URL": "http://10.10.1.1",
+        "PFSENSE_VERSION": "CE_2_8_1",
+        "AUTH_METHOD": "basic",
+        "PFSENSE_USERNAME": "admin",
+        "PFSENSE_PASSWORD": "CHANGEME",
+        "VERIFY_SSL": "true",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

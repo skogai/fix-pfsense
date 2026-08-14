@@ -1,0 +1,419 @@
+"""Diagnostics tools for pfSense MCP server."""
+
+from datetime import datetime, timezone
+from typing import Dict, Optional, Union
+
+from mcp.types import ToolAnnotations
+
+# ---------------------------------------------------------------------------
+# Ping Diagnostic
+# ---------------------------------------------------------------------------
+from ..guardrails import guarded
+from ..helpers import (
+    create_default_sort,
+    create_pagination,
+    create_search_pagination,
+    field_contains,
+    safe_data_dict,
+)
+from ..server import get_api_client, logger, mcp
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def run_ping_diagnostic(
+    host: str,
+    count: int = 4,
+) -> Dict:
+    """Run a ping diagnostic from the pfSense firewall
+
+    Args:
+        host: Hostname or IP address to ping
+        count: Number of ping packets to send (default 4)
+    """
+    if count < 1 or count > 100:
+        return {"success": False, "error": "count must be between 1 and 100"}
+
+    client = get_api_client()
+    try:
+        ping_data: Dict[str, Union[str, int]] = {
+            "host": host,
+            "count": count,
+        }
+
+        result = await client.crud_create("/diagnostics/ping", ping_data)
+
+        return {
+            "success": True,
+            "message": f"Ping to {host} completed ({count} packets)",
+            "ping_result": result.get("data", result),
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to run ping diagnostic: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# System Power
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+@guarded
+async def reboot_system(
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> Dict:
+    """Reboot the pfSense system. WARNING: This will cause a service interruption.
+
+    Args:
+        confirm: Must be set to True to execute. Safety gate for destructive operations.
+        dry_run: If True, preview the operation without executing.
+    """
+    client = get_api_client()
+    try:
+        result = await client.crud_create("/diagnostics/reboot", {})
+
+        return {
+            "success": True,
+            "message": "System reboot initiated",
+            "result": result.get("data", result),
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to reboot system: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+@guarded
+async def halt_system(
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> Dict:
+    """Halt (shut down) the pfSense system. WARNING: This will power off the system.
+
+    Args:
+        confirm: Must be set to True to execute. Safety gate for destructive operations.
+        dry_run: If True, preview the operation without executing.
+    """
+    client = get_api_client()
+    try:
+        result = await client.crud_create("/diagnostics/halt_system", {})
+
+        return {
+            "success": True,
+            "message": "System halt initiated",
+            "result": result.get("data", result),
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to halt system: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Config History
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def get_config_history(
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str = "time",
+) -> Dict:
+    """Get configuration history revisions with pagination
+
+    Args:
+        page: Page number for pagination
+        page_size: Number of results per page
+        sort_by: Field to sort by (time, description, etc.)
+    """
+    client = get_api_client()
+    try:
+        pagination, page, page_size = create_pagination(page, page_size)
+        sort = create_default_sort(sort_by)
+
+        result = await client.crud_list(
+            "/diagnostics/config_history/revisions",
+            sort=sort,
+            pagination=pagination,
+        )
+
+        revisions = result.get("data") or []
+
+        return {
+            "success": True,
+            "page": page,
+            "page_size": page_size,
+            "count": len(revisions),
+            "revisions": revisions,
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get config history: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def get_config_revision(
+    revision_id: int,
+) -> Dict:
+    """Get a specific configuration history revision by ID
+
+    Args:
+        revision_id: Revision ID (from get_config_history)
+    """
+    client = get_api_client()
+    try:
+        result = await client.crud_get_settings(
+            "/diagnostics/config_history/revision",
+            params={"id": revision_id},
+        )
+
+        return {
+            "success": True,
+            "revision_id": revision_id,
+            "revision": result.get("data", result),
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get config revision: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+@guarded
+async def delete_config_revision(
+    revision_id: int,
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> Dict:
+    """Delete a configuration history revision by ID. WARNING: This is irreversible.
+
+    Args:
+        revision_id: Revision ID (from get_config_history)
+        confirm: Must be set to True to execute. Safety gate for destructive operations.
+        dry_run: If True, preview the operation without executing.
+    """
+    client = get_api_client()
+    try:
+        result = await client.crud_delete("/diagnostics/config_history/revision", revision_id)
+
+        return {
+            "success": True,
+            "message": f"Config revision {revision_id} deleted",
+            "revision_id": revision_id,
+            "result": result.get("data", result),
+            "links": client.extract_links(result),
+            "note": "Object IDs have shifted after deletion. Re-query config history before performing further operations by ID.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to delete config revision: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# PF Tables
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def search_pf_tables(
+    search_term: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str = "name",
+) -> Dict:
+    """Search pf firewall tables with filtering and pagination
+
+    Args:
+        search_term: General search across table name (client-side filter)
+        page: Page number for pagination
+        page_size: Number of results per page
+        sort_by: Field to sort by (name, count, etc.)
+    """
+    client = get_api_client()
+    try:
+        pagination, page, page_size = create_search_pagination(page, page_size, search_term)
+        sort = create_default_sort(sort_by)
+
+        result = await client.crud_list(
+            "/diagnostics/tables",
+            sort=sort,
+            pagination=pagination,
+        )
+
+        tables = result.get("data") or []
+
+        if search_term:
+            term_lower = search_term.lower()
+            tables = [
+                t for t in tables
+                if field_contains(t, "name", term_lower)
+            ]
+
+        return {
+            "success": True,
+            "page": page,
+            "page_size": page_size,
+            "filters_applied": {"search_term": search_term},
+            "count": len(tables),
+            "pf_tables": tables,
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to search pf tables: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def get_pf_table(
+    name: str,
+) -> Dict:
+    """Get the contents of a specific pf firewall table
+
+    Args:
+        name: Table name (from search_pf_tables, e.g., "bogons", "sshlockout", "virusprot")
+    """
+    client = get_api_client()
+    try:
+        if not name or not name.strip():
+            return {"success": False, "error": "name is required"}
+
+        # The Table model is keyed by table name, so the name is the object id.
+        result = await client._make_request(
+            "GET", "/diagnostics/table",
+            extra_params={"id": name.strip()},
+        )
+
+        table = safe_data_dict(result)
+        entries = table.get("entries") or []
+
+        return {
+            "success": True,
+            # get() alone falls back only when the key is absent; the API
+            # returns an explicit null here, and the request went out with
+            # the stripped name, so echo that rather than the raw argument.
+            "table_name": table.get("name") or name.strip(),
+            "count": len(entries),
+            "entries": entries,
+            "table": table,
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get pf table '{name}': {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Config Backup & Restore
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+@guarded
+async def restore_config_backup(
+    revision_id: int,
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> Dict:
+    """Restore pfSense configuration to a previous revision. WARNING: This replaces the running config.
+
+    Every destructive operation automatically captures the pre-change config
+    revision ID. Use get_config_history to find the revision to restore.
+
+    Args:
+        revision_id: Config revision ID to restore (from get_config_history or config_backup in tool responses)
+        confirm: Must be set to True to execute. This REPLACES the entire running config.
+        dry_run: If True, preview the operation without executing.
+    """
+    client = get_api_client()
+    try:
+        # Get the revision details first for the response
+        rev_result = await client._make_request(
+            "GET", "/diagnostics/config_history/revision",
+            extra_params={"id": str(revision_id)},
+        )
+        rev_data = rev_result.get("data", {})
+
+        # Restore by deleting all revisions AFTER this one — pfSense restores
+        # by applying the revision's config.xml
+        # The actual restore is done by DELETE on /diagnostics/config_history/revision
+        # with the revision ID — this tells pfSense to revert to that revision
+        await client._make_request(
+            "PATCH", "/diagnostics/config_history/revision",
+            data={"id": revision_id},
+        )
+
+        return {
+            "success": True,
+            "message": f"Configuration restored to revision {revision_id}",
+            "revision_id": revision_id,
+            "revision_time": rev_data.get("time", "unknown"),
+            "revision_description": rev_data.get("description", ""),
+            "warning": "The running configuration has been replaced. All services will reload.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to restore config revision {revision_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def compare_config_revisions(
+    revision_id_before: int,
+    revision_id_after: Optional[int] = None,
+) -> Dict:
+    """Compare two configuration revisions to see what changed.
+
+    If revision_id_after is not provided, compares against the current running config.
+
+    Args:
+        revision_id_before: Earlier revision ID (from get_config_history)
+        revision_id_after: Later revision ID (optional — defaults to current config)
+    """
+    client = get_api_client()
+    try:
+        # Get the before revision
+        before_result = await client._make_request(
+            "GET", "/diagnostics/config_history/revision",
+            extra_params={"id": str(revision_id_before)},
+        )
+        before_data = before_result.get("data", {})
+
+        after_data = None
+        if revision_id_after is not None:
+            after_result = await client._make_request(
+                "GET", "/diagnostics/config_history/revision",
+                extra_params={"id": str(revision_id_after)},
+            )
+            after_data = after_result.get("data", {})
+
+        return {
+            "success": True,
+            "before": {
+                "revision_id": revision_id_before,
+                "time": before_data.get("time", "unknown"),
+                "description": before_data.get("description", ""),
+            },
+            "after": {
+                "revision_id": revision_id_after or "current",
+                "time": after_data.get("time", "current") if after_data else "current",
+                "description": after_data.get("description", "") if after_data else "running config",
+            },
+            "note": "Use get_config_revision() on each ID to inspect full config XML.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to compare config revisions: {e}")
+        return {"success": False, "error": str(e)}

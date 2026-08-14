@@ -1,0 +1,949 @@
+"""Unit tests for the API client layer (src/pfsense_api_enhanced.py).
+
+Covers dataclass serialisation, helper functions, Content-Type logic,
+query-param assembly, and field remapping in higher-level methods.
+"""
+
+import asyncio
+import json
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+from src.client import EnhancedPfSenseAPIClient
+from src.helpers import (
+    create_date_range_filters,
+    create_default_sort,
+    create_interface_filter,
+    create_ip_filter,
+    create_pagination,
+    validate_port_value,
+)
+from src.models import (
+    AuthMethod,
+    ControlParameters,
+    PaginationOptions,
+    QueryFilter,
+    SortOptions,
+)
+
+# ---------------------------------------------------------------------------
+# Dataclass serialisation
+# ---------------------------------------------------------------------------
+
+class TestQueryFilter:
+    def test_exact(self):
+        assert QueryFilter("name", "foo").to_param() == ("name", "foo")
+
+    def test_contains(self):
+        assert QueryFilter("name", "foo", "contains").to_param() == ("name__contains", "foo")
+
+    def test_gte(self):
+        assert QueryFilter("age", "18", "gte").to_param() == ("age__gte", "18")
+
+
+class TestSortOptions:
+    def test_to_params(self):
+        s = SortOptions(sort_by="name", sort_order="SORT_ASC")
+        assert s.to_params() == {"sort_by": "name", "sort_order": "SORT_ASC"}
+
+    def test_empty(self):
+        s = SortOptions()
+        assert s.to_params() == {}
+
+
+class TestPaginationOptions:
+    def test_to_params(self):
+        p = PaginationOptions(limit=10, offset=20)
+        assert p.to_params() == {"limit": "10", "offset": "20"}
+
+    def test_empty(self):
+        p = PaginationOptions()
+        assert p.to_params() == {}
+
+
+class TestControlParameters:
+    def test_apply(self):
+        c = ControlParameters(apply=True)
+        assert c.to_params()["apply"] == "true"
+
+    def test_placement(self):
+        c = ControlParameters(placement=3)
+        assert c.to_params()["placement"] == "3"
+
+    def test_append_remove(self):
+        c = ControlParameters(append=True, remove=True)
+        p = c.to_params()
+        assert p["append"] == "true"
+        assert p["remove"] == "true"
+
+    def test_async_false(self):
+        c = ControlParameters(async_mode=False)
+        assert c.to_params()["async"] == "false"
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+class TestHelperFunctions:
+    def test_create_pagination(self):
+        p, page, page_size = create_pagination(page=3, page_size=25)
+        assert p.limit == 25
+        assert p.offset == 50  # (3-1)*25
+        assert page == 3
+        assert page_size == 25
+
+    def test_create_pagination_caps_at_max(self):
+        p, page, page_size = create_pagination(page=1, page_size=10000)
+        assert p.limit == 200  # MAX_PAGE_SIZE cap
+        assert p.offset == 0
+        assert page_size == 200
+
+    def test_create_pagination_clamps_negative_page(self):
+        p, page, page_size = create_pagination(page=-1, page_size=20)
+        assert page == 1
+        assert p.offset == 0
+
+    def test_create_pagination_clamps_zero_page_size(self):
+        p, page, page_size = create_pagination(page=1, page_size=0)
+        assert page_size == 50  # default fallback
+
+    def test_create_default_sort_asc(self):
+        s = create_default_sort("name")
+        assert s.sort_by == "name"
+        assert s.sort_order == "SORT_ASC"
+
+    def test_create_default_sort_desc(self):
+        s = create_default_sort("name", descending=True)
+        assert s.sort_order == "SORT_DESC"
+
+    # Port validation tests
+
+    @pytest.mark.parametrize("value", ["443", "80", "1", "65535"])
+    def test_validate_port_single_port_ok(self, value):
+        assert validate_port_value(value) is None
+
+    @pytest.mark.parametrize("value", ["1024-65535", "80-443"])
+    def test_validate_port_range_ok(self, value):
+        assert validate_port_value(value) is None
+
+    @pytest.mark.parametrize("value", ["DNS_ports", "MyAlias", "web_servers_v2"])
+    def test_validate_port_alias_name_ok(self, value):
+        assert validate_port_value(value) is None
+
+    @pytest.mark.parametrize("value", ["53 853", "80, 443", "80 443 8080"])
+    def test_validate_port_rejects_multiple(self, value):
+        err = validate_port_value(value, "destination_port")
+        assert err is not None
+        assert "Invalid destination_port" in err
+
+    def test_create_interface_filter(self):
+        f = create_interface_filter("wan")
+        assert f.field == "interface"
+        assert f.value == "wan"
+        assert f.operator == "contains"
+
+    def test_create_ip_filter(self):
+        f = create_ip_filter("10.0.0.1")
+        assert f.field == "ip"
+        assert f.value == "10.0.0.1"
+        assert f.operator == "exact"
+
+    def test_create_date_range_filters_both(self):
+        filters = create_date_range_filters("starts", "2025-01-01", "2025-12-31")
+        assert len(filters) == 2
+        assert filters[0].operator == "gte"
+        assert filters[1].operator == "lte"
+
+    def test_create_date_range_filters_empty(self):
+        filters = create_date_range_filters("starts")
+        assert filters == []
+
+
+# ---------------------------------------------------------------------------
+# _make_request Content-Type logic
+# ---------------------------------------------------------------------------
+
+class TestMakeRequestContentType:
+    """Verify that Content-Type is included/excluded correctly."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_client(self):
+        self.client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+
+    def _mock_response(self, status=200, body=None):
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = status
+        resp.json.return_value = body or {"data": []}
+        resp.text = json.dumps(body or {"data": []})
+        return resp
+
+    async def test_get_omits_content_type(self):
+        resp = self._mock_response()
+        with patch.object(self.client, "_ensure_client"):
+            self.client.client = MagicMock()
+            self.client.client.get = AsyncMock(return_value=resp)
+            await self.client._make_request("GET", "/firewall/rules")
+            headers = self.client.client.get.call_args.kwargs["headers"]
+            assert "Content-Type" not in headers
+
+    async def test_post_includes_content_type(self):
+        resp = self._mock_response()
+        with patch.object(self.client, "_ensure_client"):
+            self.client.client = MagicMock()
+            self.client.client.post = AsyncMock(return_value=resp)
+            await self.client._make_request("POST", "/firewall/rule", data={"type": "pass"})
+            headers = self.client.client.post.call_args.kwargs["headers"]
+            assert headers["Content-Type"] == "application/json"
+
+    async def test_delete_with_body_includes_content_type(self):
+        # DELETE is routed through client.request() because httpx.delete()
+        # does not accept a json= kwarg (issue #12).
+        resp = self._mock_response()
+        with patch.object(self.client, "_ensure_client"):
+            self.client.client = MagicMock()
+            self.client.client.request = AsyncMock(return_value=resp)
+            await self.client._make_request("DELETE", "/firewall/rule", data={"id": 0})
+            assert self.client.client.request.call_args.args[0] == "DELETE"
+            headers = self.client.client.request.call_args.kwargs["headers"]
+            assert headers["Content-Type"] == "application/json"
+            assert self.client.client.request.call_args.kwargs["json"] == {"id": 0}
+
+    async def test_delete_without_body_omits_content_type(self):
+        resp = self._mock_response()
+        with patch.object(self.client, "_ensure_client"):
+            self.client.client = MagicMock()
+            self.client.client.request = AsyncMock(return_value=resp)
+            await self.client._make_request("DELETE", "/firewall/rule")
+            assert self.client.client.request.call_args.args[0] == "DELETE"
+            headers = self.client.client.request.call_args.kwargs["headers"]
+            assert "Content-Type" not in headers
+
+
+class TestCrudGetSettings:
+    """Query-param forwarding on the singleton-settings GET helper.
+
+    This helper took only ``endpoint`` while two callers passed ``params=``
+    (``get_pf_table`` and ``get_config_revision``), so both raised TypeError on
+    every invocation — neither tool had ever worked. Nothing failed, because no
+    test exercised the helper with params. These pin the signature so the call
+    sites and the helper can't drift apart again silently. See PR #80.
+    """
+
+    def _client(self):
+        return EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+
+    def _ok(self):
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
+        resp.json.return_value = {"data": {}}
+        resp.text = "{}"
+        return resp
+
+    async def test_forwards_params_to_the_query_string(self):
+        client = self._client()
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=self._ok())
+            await client.crud_get_settings("/diagnostics/table", params={"id": "bogons"})
+            url = client.client.get.call_args.args[0]
+        assert url.endswith("/diagnostics/table?id=bogons")
+
+    async def test_accepts_a_non_string_param_value(self):
+        """get_config_revision passes an int revision id straight through."""
+        client = self._client()
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=self._ok())
+            await client.crud_get_settings(
+                "/diagnostics/config_history/revision", params={"id": 42}
+            )
+            url = client.client.get.call_args.args[0]
+        assert url.endswith("?id=42")
+
+    async def test_omits_the_query_string_without_params(self):
+        client = self._client()
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=self._ok())
+            await client.crud_get_settings("/system/timezone")
+            url = client.client.get.call_args.args[0]
+        assert url.endswith("/system/timezone")
+        assert "?" not in url
+
+
+class TestClientConfiguration:
+    async def test_disables_automatic_redirects(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+
+        client._ensure_client()
+        try:
+            assert client.client.follow_redirects is False
+        finally:
+            await client.close()
+
+    @pytest.mark.parametrize(
+        "location",
+        [
+            "https://192.0.2.1/api/v2/next",
+            "https://198.51.100.1/api/v2/next",
+        ],
+        ids=["same-origin", "cross-origin"],
+    )
+    async def test_redirects_are_not_followed_for_any_location(self, location):
+        seen_requests = []
+
+        async def redirect_handler(request):
+            seen_requests.append(request)
+            return httpx.Response(
+                302,
+                headers={"Location": location},
+                request=request,
+            )
+
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+        client.client = httpx.AsyncClient(
+            transport=httpx.MockTransport(redirect_handler),
+            follow_redirects=False,
+        )
+        client._client_loop = asyncio.get_running_loop()
+        try:
+            with pytest.raises(Exception, match=r"Status: 302"):
+                await client._make_request("GET", "/start")
+        finally:
+            await client.close()
+
+        assert len(seen_requests) == 1
+        assert seen_requests[0].headers["X-API-Key"] == "test-key"
+
+
+# ---------------------------------------------------------------------------
+# _make_request error handling
+# ---------------------------------------------------------------------------
+
+class TestMakeRequestErrors:
+    async def test_4xx_raises(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 404
+        resp.text = '{"message":"not found"}'
+        resp.json.return_value = {"message": "not found"}
+
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=resp)
+            with pytest.raises(Exception, match="404"):
+                await client._make_request("GET", "/nope")
+
+    async def test_3xx_raises_without_parsing_redirect_body(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 302
+        response.headers = {"Location": "https://198.51.100.1/next"}
+
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=response)
+            with pytest.raises(Exception, match=r"Status: 302"):
+                await client._make_request("GET", "/start")
+
+        response.json.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "host, expected, not_expected",
+        [
+            ("http://192.0.2.1", "change it to https://", "nothing in front of it"),
+            ("https://192.0.2.1", "nothing in front of it", "change it to https://"),
+        ],
+        ids=["http-origin", "https-origin"],
+    )
+    async def test_redirect_error_names_the_likely_cause(
+        self, host, expected, not_expected
+    ):
+        """A redirect is a misconfiguration, so the error has to say which one.
+
+        pfSense redirects http:// to https:// by default and PFSENSE_URL is not
+        scheme-validated at startup, so this error is where an operator using
+        http:// first learns of it. Telling them only that redirects are
+        disabled leaves them to guess.
+        """
+        client = EnhancedPfSenseAPIClient(
+            host=host,
+            auth_method=AuthMethod.API_KEY,
+            api_key="test-key",
+            verify_ssl=False,
+        )
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 302
+        response.headers = {"Location": "https://192.0.2.1/api/v2/start"}
+
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=response)
+            with pytest.raises(Exception) as exc:
+                await client._make_request("GET", "/start")
+
+        assert expected in str(exc.value)
+        assert not_expected not in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "auth_method, kwargs, expects_api_key_reason",
+        [
+            (AuthMethod.API_KEY, {"api_key": "test-key"}, True),
+            (AuthMethod.BASIC, {"username": "admin", "password": "pw"}, False),
+            (AuthMethod.JWT, {"username": "admin", "password": "pw"}, False),
+        ],
+        ids=["api-key", "basic", "jwt"],
+    )
+    async def test_redirect_reason_matches_the_credential_in_use(
+        self, auth_method, kwargs, expects_api_key_reason
+    ):
+        """The stated reason has to be true for the credential actually sent.
+
+        Only API_KEY puts X-API-Key on the wire, and that header is the one
+        httpx does not strip across origins. BASIC and JWT send Authorization,
+        which it does strip — so the X-API-Key rationale would be false there.
+        """
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=auth_method,
+            verify_ssl=False,
+            **kwargs,
+        )
+        # Seed an unexpired token so JWT doesn't detour through /auth/jwt.
+        client.jwt_token = "seeded-token"
+        client.jwt_expiry = datetime.now() + timedelta(hours=1)
+
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 302
+        response.headers = {"Location": "https://198.51.100.1/next"}
+
+        with patch.object(client, "_ensure_client"):
+            client.client = MagicMock()
+            client.client.get = AsyncMock(return_value=response)
+            with pytest.raises(Exception) as exc:
+                await client._make_request("GET", "/start")
+
+        message = str(exc.value)
+        assert ("X-API-Key" in message) is expects_api_key_reason
+        assert "Redirects are disabled for API safety" in message
+
+
+# ---------------------------------------------------------------------------
+# _build_query_params
+# ---------------------------------------------------------------------------
+
+class TestBuildQueryParams:
+    def test_assembly(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="k",
+            verify_ssl=False,
+        )
+        qs = client._build_query_params(
+            filters=[QueryFilter("name", "test", "contains")],
+            sort=SortOptions(sort_by="name"),
+            pagination=PaginationOptions(limit=10, offset=0),
+        )
+        assert "name__contains=test" in qs
+        assert "sort_by=name" in qs
+        assert "limit=10" in qs
+
+
+# ---------------------------------------------------------------------------
+# Higher-level method field remapping
+# ---------------------------------------------------------------------------
+
+class TestGetFirewallRulesRemap:
+    """get_firewall_rules must rewrite sort_by='sequence' to 'tracker'."""
+
+    async def test_sequence_to_tracker(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": []}
+        await mock_client.get_firewall_rules(
+            sort=SortOptions(sort_by="sequence"),
+        )
+        call_kwargs = mock_make_request.call_args
+        sort = call_kwargs.kwargs.get("sort") or call_kwargs[1].get("sort")
+        assert sort.sort_by == "tracker"
+
+
+class TestGetDhcpLeasesIfFilter:
+    """get_dhcp_leases must map interface to the 'if' field."""
+
+    async def test_interface_becomes_if(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": []}
+        await mock_client.get_dhcp_leases(interface="lan")
+        call_kwargs = mock_make_request.call_args
+        filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
+        assert any(f.field == "if" for f in filters)
+
+
+# ---------------------------------------------------------------------------
+# Alias update/delete client methods
+# ---------------------------------------------------------------------------
+
+class TestUpdateAliasClient:
+    async def test_patch_with_id(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"id": 0}}
+        await mock_client.update_alias(0, {"name": "new_name"})
+        call_kwargs = mock_make_request.call_args
+        data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert data["id"] == 0
+        assert data["name"] == "new_name"
+        method = call_kwargs[0][0] if call_kwargs[0] else call_kwargs.kwargs.get("method")
+        assert method == "PATCH"
+
+    async def test_with_control_parameters(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"id": 1}}
+        ctrl = ControlParameters(apply=False)
+        await mock_client.update_alias(1, {"type": "host"}, control=ctrl)
+        call_kwargs = mock_make_request.call_args
+        control = call_kwargs.kwargs.get("control") or call_kwargs[1].get("control")
+        assert control.apply is False
+
+
+class TestDeleteAliasClient:
+    async def test_delete_with_id(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {}}
+        await mock_client.delete_alias(2)
+        call_kwargs = mock_make_request.call_args
+        data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert data["id"] == 2
+        method = call_kwargs[0][0] if call_kwargs[0] else call_kwargs.kwargs.get("method")
+        assert method == "DELETE"
+
+
+class TestAddToAliasClient:
+    async def test_add_uses_patch_with_append(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"id": 9}}
+        await mock_client.add_to_alias(9, ["10.0.0.5"])
+        call_kwargs = mock_make_request.call_args
+        method = call_kwargs[0][0] if call_kwargs[0] else call_kwargs.kwargs.get("method")
+        assert method == "PATCH"
+        endpoint = call_kwargs[0][1] if len(call_kwargs[0]) > 1 else call_kwargs.kwargs.get("endpoint")
+        assert endpoint == "/firewall/alias"
+        data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert data["id"] == 9
+        assert data["address"] == ["10.0.0.5"]
+        control = call_kwargs.kwargs.get("control") or call_kwargs[1].get("control")
+        assert control.append is True
+
+
+class TestRemoveFromAliasClient:
+    async def test_remove_rebuilds_address_and_detail_in_lockstep(self, mock_client, mock_make_request):
+        """The API's remove flag strips only addresses and then rejects the
+        alias for having more detail items than addresses; removal must
+        rebuild both lists together."""
+        mock_make_request.side_effect = [
+            {"data": {"id": 9,
+                      "address": ["10.0.0.1", "10.0.0.5", "10.0.0.9"],
+                      "detail": ["one", "five", "nine"]}},
+            {"data": {"id": 9}},
+        ]
+        await mock_client.remove_from_alias(9, ["10.0.0.5"])
+        assert mock_make_request.call_count == 2
+        get_call = mock_make_request.call_args_list[0]
+        assert get_call[0][0] == "GET"
+        patch_call = mock_make_request.call_args_list[1]
+        assert patch_call[0][0] == "PATCH"
+        assert patch_call[0][1] == "/firewall/alias"
+        data = patch_call.kwargs.get("data") or patch_call[1].get("data")
+        assert data["id"] == 9
+        assert data["address"] == ["10.0.0.1", "10.0.0.9"]
+        assert data["detail"] == ["one", "nine"]
+
+    async def test_remove_pads_short_detail_list(self, mock_client, mock_make_request):
+        mock_make_request.side_effect = [
+            {"data": {"id": 3,
+                      "address": ["10.0.0.1", "10.0.0.5", "10.0.0.9"],
+                      "detail": ["one"]}},
+            {"data": {"id": 3}},
+        ]
+        await mock_client.remove_from_alias(3, ["10.0.0.1"])
+        patch_call = mock_make_request.call_args_list[1]
+        data = patch_call.kwargs.get("data") or patch_call[1].get("data")
+        assert data["address"] == ["10.0.0.5", "10.0.0.9"]
+        assert data["detail"] == ["", ""]
+
+    async def test_concurrent_removes_are_serialized_per_alias(self, mock_client, mock_make_request):
+        """Concurrent read-modify-write removals must not lose an update."""
+        alias = {
+            "address": ["10.0.0.1", "10.0.0.5"],
+            "detail": ["one", "five"],
+        }
+        calls = []
+
+        async def request(method, endpoint, **kwargs):
+            if method == "GET":
+                calls.append(("GET", tuple(alias["address"])))
+                await asyncio.sleep(0)
+                return {"data": {"id": 9, **alias}}
+
+            data = kwargs["data"]
+            calls.append(("PATCH", tuple(data["address"])))
+            await asyncio.sleep(0)
+            alias["address"] = list(data["address"])
+            alias["detail"] = list(data["detail"])
+            return {"data": {"id": 9}}
+
+        mock_make_request.side_effect = request
+        await asyncio.gather(
+            mock_client.remove_from_alias(9, ["10.0.0.1"]),
+            mock_client.remove_from_alias(9, ["10.0.0.5"]),
+        )
+
+        assert alias["address"] == []
+        assert calls == [
+            ("GET", ("10.0.0.1", "10.0.0.5")),
+            ("PATCH", ("10.0.0.5",)),
+            ("GET", ("10.0.0.5",)),
+            ("PATCH", ()),
+        ]
+
+    def test_alias_locks_do_not_outlive_their_event_loop(self, mock_client):
+        """A lock latches its loop once contended, so it must not be reused.
+
+        asyncio.Lock only records a loop when an acquire actually blocks — the
+        uncontended fast path returns before _get_loop() is reached. So a lock
+        contended under one loop and awaited under the next raises "bound to a
+        different event loop", and this client is explicitly built to be reused
+        across loops (reset(), plus the loop-change branch in _ensure_client).
+        """
+        async def contend():
+            lock = mock_client._alias_lock(9)
+
+            async def hold():
+                async with lock:
+                    await asyncio.sleep(0)
+
+            await asyncio.gather(hold(), hold())
+
+        asyncio.run(contend())
+        assert mock_client._alias_locks  # latched onto the now-dead loop
+
+        mock_client.reset()
+        assert not mock_client._alias_locks
+
+        asyncio.run(contend())  # would raise RuntimeError if carried over
+
+    def test_ensure_client_drops_locks_when_the_loop_changes(self, mock_client):
+        """The same clearing has to happen on the implicit path.
+
+        Callers that never call reset() still get a rebuilt httpx client when
+        _ensure_client sees a new loop; the locks have to go with it.
+        """
+        async def contend():
+            mock_client._ensure_client()
+            lock = mock_client._alias_lock(9)
+
+            async def hold():
+                async with lock:
+                    await asyncio.sleep(0)
+
+            await asyncio.gather(hold(), hold())
+
+        asyncio.run(contend())
+        asyncio.run(contend())  # would raise RuntimeError if carried over
+
+    def test_alias_lock_is_stable_per_alias(self, mock_client):
+        """Same alias returns one lock; different aliases don't share one."""
+        assert mock_client._alias_lock(9) is mock_client._alias_lock(9)
+        assert mock_client._alias_lock(9) is not mock_client._alias_lock(10)
+
+
+# ---------------------------------------------------------------------------
+# Service control client methods
+# ---------------------------------------------------------------------------
+
+class TestServiceControlClient:
+    async def test_start_endpoint(self, mock_client, mock_make_request):
+        # First call returns service list (for ID lookup), second call does the action
+        mock_make_request.side_effect = [
+            {"data": [{"id": 3, "name": "dhcpd", "status": "running"}]},
+            {"data": {"name": "dhcpd"}},
+        ]
+        await mock_client.start_service("dhcpd")
+        # Second call should be the actual service control
+        call_args = mock_make_request.call_args_list[1]
+        assert call_args[0][1] == "/status/service"
+        data = call_args.kwargs.get("data") or call_args[1].get("data")
+        assert data["id"] == 3
+        assert data["action"] == "start"
+
+    async def test_stop_endpoint(self, mock_client, mock_make_request):
+        mock_make_request.side_effect = [
+            {"data": [{"id": 5, "name": "dhcpd", "status": "running"}]},
+            {"data": {"name": "dhcpd"}},
+        ]
+        await mock_client.stop_service("dhcpd")
+        call_args = mock_make_request.call_args_list[1]
+        assert call_args[0][1] == "/status/service"
+        data = call_args.kwargs.get("data") or call_args[1].get("data")
+        assert data["id"] == 5
+        assert data["action"] == "stop"
+
+    async def test_restart_endpoint(self, mock_client, mock_make_request):
+        mock_make_request.side_effect = [
+            {"data": [{"id": 7, "name": "unbound", "status": "running"}]},
+            {"data": {"name": "unbound"}},
+        ]
+        await mock_client.restart_service("unbound")
+        call_args = mock_make_request.call_args_list[1]
+        assert call_args[0][1] == "/status/service"
+        data = call_args.kwargs.get("data") or call_args[1].get("data")
+        assert data["id"] == 7
+        assert data["action"] == "restart"
+
+
+# ---------------------------------------------------------------------------
+# DHCP static mapping CRUD client methods
+# ---------------------------------------------------------------------------
+
+class TestDhcpStaticMappingCrud:
+    async def test_get_with_interface(self, mock_client, mock_make_request):
+        """Interface passed as parent_id extra_param, not a filter."""
+        mock_make_request.return_value = {"data": []}
+        await mock_client.get_dhcp_static_mappings(interface="lan")
+        call_kwargs = mock_make_request.call_args
+        assert call_kwargs[0][1] == "/services/dhcp_server/static_mappings"
+        extra = call_kwargs.kwargs.get("extra_params") or call_kwargs[1].get("extra_params")
+        assert extra == {"parent_id": "lan"}
+
+    async def test_create_with_parent_id(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"id": 0}}
+        mapping_data = {"parent_id": "lan", "mac": "aa:bb:cc:dd:ee:01", "ipaddr": "192.168.1.200"}
+        await mock_client.create_dhcp_static_mapping(mapping_data)
+        call_kwargs = mock_make_request.call_args
+        data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert data["parent_id"] == "lan"
+        assert data["mac"] == "aa:bb:cc:dd:ee:01"
+
+    async def test_update_with_id(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"id": 0}}
+        await mock_client.update_dhcp_static_mapping(0, {"hostname": "newhost"})
+        call_kwargs = mock_make_request.call_args
+        data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert data["id"] == 0
+        assert data["hostname"] == "newhost"
+
+    async def test_delete(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {}}
+        await mock_client.delete_dhcp_static_mapping(5, "lan")
+        call_kwargs = mock_make_request.call_args
+        data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert data["id"] == 5
+        assert data["parent_id"] == "lan"
+
+
+# ---------------------------------------------------------------------------
+# Firewall apply
+# ---------------------------------------------------------------------------
+
+class TestFirewallApply:
+    async def test_apply(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"status": "applied"}}
+        result = await mock_client.apply_firewall_changes()
+        mock_make_request.assert_called_once_with("POST", "/firewall/apply", data={})
+        assert result["data"]["status"] == "applied"
+
+
+# ---------------------------------------------------------------------------
+# DHCP server CRUD
+# ---------------------------------------------------------------------------
+
+class TestDhcpServerCrud:
+    async def test_get_servers(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": [{"id": 0, "interface": "lan"}]}
+        result = await mock_client.get_dhcp_servers()
+        assert result["data"][0]["interface"] == "lan"
+
+    async def test_update_server(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": {"id": 0}}
+        await mock_client.update_dhcp_server({"id": 0, "range_from": "10.0.0.2"})
+        data = mock_make_request.call_args.kwargs.get("data") or mock_make_request.call_args[1].get("data")
+        assert data["range_from"] == "10.0.0.2"
+
+
+# ---------------------------------------------------------------------------
+# ARP table
+# ---------------------------------------------------------------------------
+
+class TestArpTable:
+    async def test_get_arp_table(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": [{"ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:01"}]}
+        result = await mock_client.get_arp_table()
+        assert len(result["data"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic command
+# ---------------------------------------------------------------------------
+
+class TestDiagnosticCommand:
+    async def test_run_command(self, mock_client, mock_make_request):
+        mock_make_request.return_value = {"data": "output here"}
+        await mock_client._run_diagnostic_command("cat /tmp/rules.debug")
+        call_args = mock_make_request.call_args
+        assert call_args[0][1] == "/diagnostics/command_prompt"
+        data = call_args.kwargs.get("data") or call_args[1].get("data")
+        assert data["command"] == "cat /tmp/rules.debug"
+
+
+# ---------------------------------------------------------------------------
+# Firewall log filtering
+# ---------------------------------------------------------------------------
+
+class TestFirewallLogFiltering:
+    async def test_get_logs_by_ip_fetches_newest_window_and_filters_locally(
+        self, mock_client, mock_make_request
+    ):
+        mock_make_request.return_value = {
+            "data": [
+                {"text": "new 203.0.113.5 entry"},
+                {"text": "new 192.0.2.10 entry"},
+            ]
+        }
+
+        result = await mock_client.get_logs_by_ip("203.0.113.5", lines=200)
+
+        assert result["data"] == [{"text": "new 203.0.113.5 entry"}]
+        assert mock_make_request.call_args.kwargs["filters"] is None
+        assert mock_make_request.call_args.kwargs["pagination"].limit == 50
+
+    async def test_get_logs_by_ip_matches_parsed_addresses_exactly(
+        self, mock_client, mock_make_request
+    ):
+        target = "Jan 15 10:00:00 pfSense filterlog[1]: 5,,,1000000103,wan,match,block,in,4,0x0,,128,12345,0,none,6,tcp,60,203.0.113.5,192.168.1.1,54321,22,0,S,"
+        near_match = target.replace("203.0.113.5", "203.0.113.50")
+        unparseable = "service: lookup for 203.0.113.5 completed"
+        mock_make_request.return_value = {
+            "data": [
+                {"text": target},
+                {"text": near_match},
+                {"text": unparseable},
+            ]
+        }
+
+        result = await mock_client.get_logs_by_ip("203.0.113.5")
+
+        assert result["data"] == [{"text": target}, {"text": unparseable}]
+
+    async def test_get_blocked_traffic_logs_filters_parsed_actions_locally(
+        self, mock_client, mock_make_request
+    ):
+        mock_make_request.return_value = {
+            "data": [
+                {"text": "Jan 15 10:00:00 pfSense filterlog[1]: 5,,,1000000103,wan,match,block,in,4,0x0,,128,12345,0,none,6,tcp,60,203.0.113.5,192.168.1.1,54321,22,0,S,"},
+                {"text": "Jan 15 10:00:30 pfSense filterlog[1]: 5,,,1000000105,wan,match,reject,in,4,0x0,,128,12347,0,none,6,tcp,60,203.0.113.6,192.168.1.1,54322,22,0,S,"},
+                {"text": "Jan 15 10:01:00 pfSense filterlog[1]: 5,,,1000000104,lan,match,pass,in,4,0x0,,64,12346,0,none,17,udp,41,192.168.1.100,8.8.8.8,51234,53,21,"},
+                {"text": "service: block operation completed"},
+            ]
+        }
+
+        result = await mock_client.get_blocked_traffic_logs(lines=200)
+
+        assert result["data"] == [
+            {"text": "Jan 15 10:00:00 pfSense filterlog[1]: 5,,,1000000103,wan,match,block,in,4,0x0,,128,12345,0,none,6,tcp,60,203.0.113.5,192.168.1.1,54321,22,0,S,"},
+            {"text": "Jan 15 10:00:30 pfSense filterlog[1]: 5,,,1000000105,wan,match,reject,in,4,0x0,,128,12347,0,none,6,tcp,60,203.0.113.6,192.168.1.1,54322,22,0,S,"},
+        ]
+        assert mock_make_request.call_args.kwargs["filters"] is None
+        assert mock_make_request.call_args.kwargs["pagination"].limit == 50
+
+
+# ---------------------------------------------------------------------------
+# Auth methods
+# ---------------------------------------------------------------------------
+
+class TestAuthMethods:
+    async def test_api_key_headers(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="my-test-key",
+            verify_ssl=False,
+        )
+        headers = await client._get_auth_headers()
+        assert headers["X-API-Key"] == "my-test-key"
+        assert headers["Content-Type"] == "application/json"
+
+    async def test_basic_auth_headers(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.BASIC,
+            username="admin",
+            password="secret",
+            verify_ssl=False,
+        )
+        headers = await client._get_auth_headers()
+        assert headers["Authorization"].startswith("Basic ")
+
+    async def test_missing_creds_error(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            verify_ssl=False,
+        )
+        with pytest.raises(ValueError, match="API key required"):
+            await client._get_auth_headers()
+
+
+# ---------------------------------------------------------------------------
+# HATEOAS extract_links
+# ---------------------------------------------------------------------------
+
+class TestHateoasExtract:
+    def test_with_links(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="k",
+            verify_ssl=False,
+        )
+        response = {"data": [], "_links": {"self": "/firewall/rules", "next": "/firewall/rules?offset=10"}}
+        links = client.extract_links(response)
+        assert links["self"] == "/firewall/rules"
+        assert "next" in links
+
+    def test_empty(self):
+        client = EnhancedPfSenseAPIClient(
+            host="https://192.0.2.1",
+            auth_method=AuthMethod.API_KEY,
+            api_key="k",
+            verify_ssl=False,
+        )
+        links = client.extract_links({"data": []})
+        assert links == {}
