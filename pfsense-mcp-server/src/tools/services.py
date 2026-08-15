@@ -1,0 +1,104 @@
+"""Service tools for pfSense MCP server."""
+
+from datetime import datetime, timezone
+from typing import Dict, Optional
+
+from mcp.types import ToolAnnotations
+
+from ..guardrails import rate_limited
+from ..helpers import field_contains
+from ..models import QueryFilter
+from ..server import get_api_client, logger, mcp
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def search_services(
+    search_term: Optional[str] = None,
+    status_filter: Optional[str] = None,
+) -> Dict:
+    """Search and filter system services
+
+    Args:
+        search_term: Search in service names or descriptions
+        status_filter: Filter by status (e.g., running, stopped). Any value accepted — pfSense will filter server-side.
+    """
+    client = get_api_client()
+    try:
+        if status_filter == "running":
+            result = await client.find_running_services()
+        elif status_filter == "stopped":
+            result = await client.find_stopped_services()
+        elif status_filter:
+            # Pass any status filter to the API — let pfSense decide validity
+            result = await client.get_services(
+                filters=[QueryFilter("status", status_filter)]
+            )
+        else:
+            result = await client.get_services()
+
+        services = result.get("data") or []
+
+        if search_term:
+            term_lower = search_term.lower()
+            services = [
+                s for s in services
+                if field_contains(s, "name", term_lower)
+                or field_contains(s, "description", term_lower)
+            ]
+
+        return {
+            "success": True,
+            "filters_applied": {
+                "search_term": search_term,
+                "status_filter": status_filter,
+            },
+            "count": len(services),
+            "services": services,
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to search services: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
+@rate_limited
+async def control_service(
+    service_name: str,
+    action: str
+) -> Dict:
+    """Start, stop, or restart a service on the live pfSense appliance.
+
+    WARNING: Stopping critical services (dhcpd, unbound, sshd) will disrupt network operations.
+
+    Args:
+        service_name: Name of the service (e.g., "dhcpd", "unbound", "ntpd")
+        action: Action to perform ("start", "stop", or "restart")
+    """
+    client = get_api_client()
+    try:
+        action_lower = action.lower()
+        if action_lower == "start":
+            result = await client.start_service(service_name)
+        elif action_lower == "stop":
+            result = await client.stop_service(service_name)
+        elif action_lower == "restart":
+            result = await client.restart_service(service_name)
+        else:
+            return {
+                "success": False,
+                "error": f"Invalid action '{action}'. Must be 'start', 'stop', or 'restart'",
+            }
+
+        return {
+            "success": True,
+            "message": f"Service '{service_name}' {action_lower} command sent",
+            "service": service_name,
+            "action": action_lower,
+            "result": result.get("data", result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to {action} service {service_name}: {e}")
+        return {"success": False, "error": str(e)}

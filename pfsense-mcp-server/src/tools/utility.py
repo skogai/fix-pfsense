@@ -1,0 +1,372 @@
+"""Utility tools for pfSense MCP server."""
+
+import os
+from datetime import datetime, timezone
+from typing import Dict
+
+from mcp.types import ToolAnnotations
+
+from ..guardrails import classify_risk, get_rollback_history, rate_limited
+from ..models import PaginationOptions, QueryFilter, SortOptions
+from ..server import get_api_client, logger, mcp
+
+# Allowed first path segments for user-supplied endpoints (prevents path traversal)
+_SAFE_ENDPOINT_ROOTS = (
+    "firewall", "status", "services", "diagnostics",
+    "system", "vpn", "routing", "interface",
+    "user", "certificates",
+)
+
+
+def _validate_endpoint(endpoint: str) -> str:
+    """Validate a user-supplied API endpoint path.
+
+    Matches on the whole first path segment so that collection endpoints are
+    reachable: the API serves a model at /interface and its collection at
+    /interfaces, so both spellings of the segment are accepted. Comparing whole
+    segments also means /systemfoo is rejected rather than passing as a /system
+    path.
+    """
+    endpoint = endpoint.strip()
+    if not endpoint.startswith("/"):
+        endpoint = f"/{endpoint}"
+    if ".." in endpoint:
+        raise ValueError("Invalid endpoint path: contains '..'")
+    root = endpoint.split("?", 1)[0].strip("/").split("/", 1)[0]
+    # Strip at most ONE trailing "s" for the plural spelling. rstrip("s")
+    # strips every trailing "s", which would let /systemss and /systemsss
+    # through the same check that is here to reject /systemfoo.
+    singular = root[:-1] if root.endswith("s") else root
+    if root not in _SAFE_ENDPOINT_ROOTS and singular not in _SAFE_ENDPOINT_ROOTS:
+        raise ValueError(
+            f"Endpoint '{endpoint}' is not in the allowed list. "
+            f"Allowed first path segments (singular or plural): "
+            f"{', '.join(_SAFE_ENDPOINT_ROOTS)}"
+        )
+    return endpoint
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def follow_api_link(link_url: str) -> Dict:
+    """Follow a HATEOAS link from a previous API response
+
+    Args:
+        link_url: The link URL to follow (from _links section)
+    """
+    client = get_api_client()
+    try:
+        # Resolve the link to a relative endpoint path and validate it
+        url = link_url.strip()
+        if url.startswith(client.host):
+            endpoint = url.replace(client.host, "").replace("/api/v2", "")
+        elif url.startswith("/api/v2"):
+            endpoint = url.replace("/api/v2", "")
+        else:
+            endpoint = url
+        _validate_endpoint(endpoint)
+
+        result = await client.follow_link(link_url)
+
+        return {
+            "success": True,
+            "followed_link": link_url,
+            "data": result.get("data", result),
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to follow link: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True))
+@rate_limited
+async def enable_hateoas(confirm: bool = False) -> Dict:
+    """Enable HATEOAS links in API responses on the pfSense server.
+
+    WARNING: This modifies the pfSense REST API server-wide setting via
+    PATCH /system/restapi/settings. It affects ALL API consumers, not just
+    this MCP session.
+
+    Args:
+        confirm: Must be True to proceed (this changes a global server setting).
+    """
+    if not confirm:
+        return {
+            "success": False,
+            "error": "This modifies a global pfSense REST API setting. Set confirm=True to proceed.",
+            "details": "Enabling HATEOAS adds navigation links to all API responses for all consumers.",
+        }
+    client = get_api_client()
+    try:
+        result = await client.set_hateoas(True)
+        return {
+            "success": True,
+            "message": "HATEOAS enabled on pfSense REST API server — all API responses will now include navigation links",
+            "result": result.get("data", result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to enable HATEOAS: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True))
+@rate_limited
+async def disable_hateoas(confirm: bool = False) -> Dict:
+    """Disable HATEOAS links in API responses on the pfSense server.
+
+    WARNING: This modifies the pfSense REST API server-wide setting via
+    PATCH /system/restapi/settings. It affects ALL API consumers, not just
+    this MCP session.
+
+    Args:
+        confirm: Must be True to proceed (this changes a global server setting).
+    """
+    if not confirm:
+        return {
+            "success": False,
+            "error": "This modifies a global pfSense REST API setting. Set confirm=True to proceed.",
+            "details": "Disabling HATEOAS removes navigation links from all API responses for all consumers.",
+        }
+    client = get_api_client()
+    try:
+        result = await client.set_hateoas(False)
+        return {
+            "success": True,
+            "message": "HATEOAS disabled on pfSense REST API server — API responses will be more compact",
+            "result": result.get("data", result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to disable HATEOAS: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def refresh_object_ids(endpoint: str) -> Dict:
+    """Refresh object IDs by re-querying an endpoint (handles ID changes after deletions).
+
+    pfSense object IDs are non-persistent array indices that change after any
+    deletion. Call this before performing update/delete operations to get fresh IDs.
+
+    Args:
+        endpoint: Relative API path (e.g. "/firewall/rules", "/firewall/aliases")
+    """
+    client = get_api_client()
+    try:
+        endpoint = _validate_endpoint(endpoint)
+        result = await client.refresh_object_ids(endpoint)
+
+        return {
+            "success": True,
+            "endpoint": endpoint,
+            "refreshed_count": len(result.get("data") or []),
+            "objects": result.get("data") or [],
+            "message": "Object IDs refreshed - use updated IDs for future operations",
+            "links": client.extract_links(result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh object IDs: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def find_object_by_field(
+    endpoint: str,
+    field: str,
+    value: str
+) -> Dict:
+    """Find an object by a specific field value (safer than using IDs).
+
+    Use this instead of IDs when you need a stable reference to an object,
+    since pfSense object IDs change after deletions.
+
+    Args:
+        endpoint: Relative API path of a collection (e.g. "/firewall/rules",
+            "/firewall/aliases", "/interfaces")
+        field: Field name to search by (e.g. "descr", "name")
+        value: Value to search for
+    """
+    client = get_api_client()
+    try:
+        endpoint = _validate_endpoint(endpoint)
+        obj = await client.find_object_by_field(endpoint, field, value)
+
+        if obj:
+            return {
+                "success": True,
+                "endpoint": endpoint,
+                "search_field": field,
+                "search_value": value,
+                "found": True,
+                "object": obj,
+                "object_id": obj.get("id"),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            return {
+                "success": True,
+                "endpoint": endpoint,
+                "search_field": field,
+                "search_value": value,
+                "found": False,
+                "message": "No object found matching criteria",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+    except Exception as e:
+        logger.error(f"Failed to find object by field: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def get_api_capabilities() -> Dict:
+    """Get comprehensive API capabilities and configuration"""
+    client = get_api_client()
+    try:
+        capabilities = await client.get_api_capabilities()
+
+        return {
+            "success": True,
+            "api_version": "v2",
+            "package": "jaredhendrickson13/pfsense-api",
+            "pfsense_version": os.getenv("PFSENSE_VERSION", "CE_2_8_1"),
+            "capabilities": capabilities.get("data", capabilities),
+            "features": {
+                "object_ids": "Dynamic, non-persistent",
+                "queries_filters": "Full support with multiple operators",
+                "sorting": "Multi-field sorting supported",
+                "pagination": "Limit/offset based",
+                "hateoas": f"{'Enabled' if client.hateoas_enabled else 'Disabled'}",
+                "control_parameters": "Apply, async, placement, append, remove"
+            },
+            "links": client.extract_links(capabilities),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get API capabilities: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def test_enhanced_connection() -> Dict:
+    """Test enhanced API connection with feature validation"""
+    client = get_api_client()
+    try:
+        # Test basic connection
+        conn_result = await client.test_connection()
+
+        if not conn_result["connected"]:
+            return {
+                "success": False,
+                "message": "Basic connection failed",
+                "error": conn_result.get("error", "unknown"),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+        # Test advanced features
+        tests = []
+
+        # Test filtering
+        try:
+            await client.get_interfaces(
+                filters=[QueryFilter("status", "up")],
+                pagination=PaginationOptions(limit=1)
+            )
+            tests.append({"feature": "filtering", "status": "working"})
+        except Exception as e:
+            tests.append({"feature": "filtering", "status": "failed", "error": str(e)})
+
+        # Test sorting
+        try:
+            await client.get_firewall_rules(
+                sort=SortOptions(sort_by="interface"),
+                pagination=PaginationOptions(limit=1)
+            )
+            tests.append({"feature": "sorting", "status": "working"})
+        except Exception as e:
+            tests.append({"feature": "sorting", "status": "failed", "error": str(e)})
+
+        # Test HATEOAS if enabled
+        if client.hateoas_enabled:
+            try:
+                result = await client.get_system_status()
+                links = client.extract_links(result)
+                if links:
+                    tests.append({"feature": "hateoas", "status": "working", "links_found": len(links)})
+                else:
+                    tests.append({"feature": "hateoas", "status": "no_links"})
+            except Exception as e:
+                tests.append({"feature": "hateoas", "status": "failed", "error": str(e)})
+
+        working_features = len([t for t in tests if t["status"] == "working"])
+
+        return {
+            "success": True,
+            "message": f"Enhanced connection test completed - {working_features}/{len(tests)} features working",
+            "basic_connection": True,
+            "feature_tests": tests,
+            "hateoas_enabled": client.hateoas_enabled,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Enhanced connection test failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# The tool name matches pytest's test_* pattern; without this, importing it in
+# a test module makes pytest execute the real connection tool as a "test".
+test_enhanced_connection.__test__ = False
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def get_guardrail_status() -> Dict:
+    """Get the current guardrail configuration and recent action history.
+
+    Shows risk classification for tools, rate limits, allowlist status,
+    and recent rollback entries for destructive operations.
+    """
+    from ..guardrails import _AUDIT_LOG_PATH, ALLOWED_TOOLS
+
+    return {
+        "success": True,
+        "guardrails": {
+            "allowlist_active": ALLOWED_TOOLS is not None,
+            "allowed_tools_count": len(ALLOWED_TOOLS) if ALLOWED_TOOLS else "all",
+            "audit_log_path": _AUDIT_LOG_PATH or "disabled (set MCP_AUDIT_LOG to enable)",
+            "rate_limits": {
+                "delete_ops": "10 per 60s (MCP_RATE_LIMIT_DELETE)",
+                "create_ops": "20 per 60s (MCP_RATE_LIMIT_CREATE)",
+                "critical_ops": "2 per 300s (MCP_RATE_LIMIT_CRITICAL)",
+            },
+        },
+        "recent_rollback_entries": get_rollback_history(limit=10),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
+async def check_tool_risk(tool_name: str) -> Dict:
+    """Check the risk classification and guardrail requirements for a tool.
+
+    Args:
+        tool_name: Name of the MCP tool to check (e.g., "delete_firewall_rule")
+    """
+    risk = classify_risk(tool_name)
+    requires_confirm = risk.value in ("high", "critical")
+
+    return {
+        "success": True,
+        "tool": tool_name,
+        "risk_level": risk.value,
+        "requires_confirm": requires_confirm,
+        "description": {
+            "read": "No state change. Safe to call freely.",
+            "low": "Reversible settings change. No confirmation required.",
+            "medium": "Creates or modifies configuration. Rate-limited.",
+            "high": "Destructive/irreversible. Requires confirm=True. Rate-limited.",
+            "critical": "System-level destructive. Requires confirm=True. Strictly rate-limited.",
+        }.get(risk.value, "Unknown risk level."),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

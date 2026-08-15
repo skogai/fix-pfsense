@@ -1,0 +1,56 @@
+services:
+  pfsense-mcp:
+    build: .
+    image: pfsense-mcp:latest
+    container_name: pfsense-mcp-server
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-3000}:3000"
+    environment:
+      # pfSense connection
+      PFSENSE_URL: ${PFSENSE_URL}
+      PFSENSE_VERSION: ${PFSENSE_VERSION:-CE_2_8_1}
+      AUTH_METHOD: ${AUTH_METHOD:-api_key}
+      PFSENSE_API_KEY: ${PFSENSE_API_KEY:-}
+      PFSENSE_USERNAME: ${PFSENSE_USERNAME:-}
+      PFSENSE_PASSWORD: ${PFSENSE_PASSWORD:-}
+      VERIFY_SSL: ${VERIFY_SSL:-true}
+      # MCP bearer token auth (required for HTTP mode)
+      MCP_API_KEY: ${MCP_API_KEY}
+      # Transport mode
+      MCP_TRANSPORT: streamable-http
+      # Bind to all interfaces inside container (default is 127.0.0.1 per MCP spec)
+      MCP_HOST: "0.0.0.0"
+      # Allowed origins (comma-separated) for CORS/DNS rebinding protection
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      API_TIMEOUT: ${API_TIMEOUT:-30}
+      # Optional settings
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENABLE_HATEOAS: ${ENABLE_HATEOAS:-false}
+      # Guardrails
+      MCP_AUDIT_LOG: /logs/mcp-audit.jsonl
+      MCP_RATE_LIMIT_DELETE: ${MCP_RATE_LIMIT_DELETE:-10}
+      MCP_RATE_LIMIT_CREATE: ${MCP_RATE_LIMIT_CREATE:-20}
+      MCP_RATE_LIMIT_CRITICAL: ${MCP_RATE_LIMIT_CRITICAL:-2}
+      MCP_ROLLBACK_BUFFER: ${MCP_ROLLBACK_BUFFER:-50}
+      MCP_ALLOWED_TOOLS: ${MCP_ALLOWED_TOOLS:-}
+      MCP_READ_ONLY: ${MCP_READ_ONLY:-false}
+    command: ["-t", "streamable-http"]
+    volumes:
+      - ./logs:/logs:rw
+    # Security hardening per MCP spec best practices
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64M
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3

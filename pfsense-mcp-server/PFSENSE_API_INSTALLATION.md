@@ -1,0 +1,152 @@
+# pfSense REST API v2 Installation Guide
+
+## Supported Versions
+
+| pfSense Version | REST API Package | Install Command |
+|---|---|---|
+| pfSense CE 2.8.1 | v2.10.0 (latest) | `pkg-static add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/latest/download/pfSense-2.8.1-pkg-RESTAPI.pkg` |
+| pfSense Plus 26.03.1 | v2.10.0 (latest) | `pkg-static -C /dev/null add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/latest/download/pfSense-26.03.1-pkg-RESTAPI.pkg` |
+| pfSense Plus 26.03 | v2.10.0 (latest) | `pkg-static -C /dev/null add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/latest/download/pfSense-26.03-pkg-RESTAPI.pkg` |
+| pfSense Plus 25.11.1 | v2.10.0 (latest) | `pkg-static -C /dev/null add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/latest/download/pfSense-25.11.1-pkg-RESTAPI.pkg` |
+| pfSense Plus 25.11 | v2.7.3 (legacy) | `pkg-static -C /dev/null add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/download/v2.7.3/pfSense-25.11-pkg-RESTAPI.pkg` |
+| pfSense CE 2.8.0 | v2.7.3 (legacy) | `pkg-static add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/download/v2.7.3/pfSense-2.8.0-pkg-RESTAPI.pkg` |
+| pfSense Plus 24.11 | v2.7.3 (legacy) | `pkg-static -C /dev/null add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/download/v2.7.3/pfSense-24.11-pkg-RESTAPI.pkg` |
+
+Only amd64 (64-bit) builds are supported. Check https://github.com/pfrest/pfSense-pkg-RESTAPI/releases for the correct package matching your exact pfSense version.
+
+> **Security note:** use package v2.10.0+ where a build exists for your pfSense
+> version. v2.10.0 fixes a command-injection flaw in the interface-group
+> endpoints ([GHSA-w3w4-mvcc-vmgr](https://github.com/pfrest/pfSense-pkg-RESTAPI/security/advisories/GHSA-w3w4-mvcc-vmgr))
+> and adds core command auto-escaping; v2.9.0 fixed an earlier settings-sync
+> privilege escalation ([GHSA-8q8g-9f77-8g8g](https://github.com/pfrest/pfSense-pkg-RESTAPI/security/advisories/GHSA-8q8g-9f77-8g8g)).
+> On legacy versions stuck on v2.7.3, keep the REST API settings-sync (HA sync)
+> feature disabled unless needed.
+
+## Installation
+
+### Step 1: Install the Package
+
+SSH into your pfSense system and run the install command for your version (see table above). Example for CE 2.8.1:
+
+```bash
+pkg-static add https://github.com/pfrest/pfSense-pkg-RESTAPI/releases/latest/download/pfSense-2.8.1-pkg-RESTAPI.pkg
+```
+
+### Step 2: Verify Installation
+
+Navigate to **System > REST API** in the pfSense web UI. You should see the REST API settings page with tabs for Settings, Keys, Access Lists, Updates, and Documentation.
+
+### Step 3: Enable Authentication Methods
+
+On the **System > REST API** settings page, configure which authentication methods are active. Multiple methods can be enabled simultaneously.
+
+**Option A: Basic Auth (simplest — recommended for getting started)**
+- Enable **Local Database** authentication on the Settings page
+- No additional key generation needed — use your existing pfSense admin username and password
+- Note: Only local database users are supported (not LDAP/RADIUS)
+
+**Option B: API Key**
+- Enable **API Key** authentication on the Settings page
+- Go to the **Keys** tab (System > REST API > Keys) to generate a new API key
+- The key is tied to the user who creates it and inherits that user's privileges
+- Copy the key — you will need it for the MCP server configuration
+- Keys can also be generated via `POST /api/v2/auth/key` or revoked via `DELETE /api/v2/auth/key`
+
+**Option C: JWT**
+- Enable **JWT** authentication on the Settings page
+- Uses your pfSense local database credentials to obtain a short-lived token (default: 1 hour, configurable via `jwt_exp` setting)
+- The MCP server handles token retrieval and refresh automatically via `POST /api/v2/auth/jwt`
+
+### Step 4: Assign Privileges
+
+Ensure the API user has appropriate privileges. Go to **System > User Manager**, edit your user, and verify they have the necessary permissions. The admin user has full access by default. For non-admin users, assign privileges matching the API endpoints you need (firewall rules, interfaces, services, etc.).
+
+### Step 5: Optional — Configure Access Controls
+
+On the **System > REST API > Access Lists** tab, you can optionally restrict API access by:
+- Source IP address or network
+- Specific users
+- Time-based schedules
+
+## MCP Server Configuration
+
+Create a `.env` file from the template:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your pfSense details. Example using Basic Auth (simplest):
+
+```bash
+PFSENSE_URL=https://your-pfsense.local
+PFSENSE_USERNAME=admin
+PFSENSE_PASSWORD=your-password
+# Current: CE_2_8_1, PLUS_25_11_1, PLUS_26_03, PLUS_26_03_1
+# Legacy (still accepted): CE_2_8_0, PLUS_24_11, PLUS_25_11, CE_26_03
+PFSENSE_VERSION=CE_2_8_1
+AUTH_METHOD=basic
+VERIFY_SSL=true
+# pfSense's certificate comes from its own CA, which Python does not trust by
+# default. Export it at System > Cert. Manager > CAs and point this at the PEM
+# to keep verification on. VERIFY_SSL=false turns checking off entirely and
+# exposes the API credential to interception.
+PFSENSE_CA_FILE=/path/to/pfsense-ca.pem
+```
+
+### Authentication Methods
+
+**Basic Auth (simplest — recommended for getting started)**
+```bash
+AUTH_METHOD=basic
+PFSENSE_USERNAME=admin
+PFSENSE_PASSWORD=your-password
+```
+
+**API Key**
+```bash
+AUTH_METHOD=api_key
+PFSENSE_API_KEY=your-key
+```
+
+**JWT**
+```bash
+AUTH_METHOD=jwt
+PFSENSE_USERNAME=admin
+PFSENSE_PASSWORD=your-password
+```
+
+Note: JWT auth obtains a token via `POST /api/v2/auth/jwt` using Basic Auth credentials, then uses the token as a Bearer header for subsequent requests.
+
+## Test Connection
+
+```bash
+python -m src.main          # from a clone
+# or, if installed as a package:
+pfsense-mcp-server
+```
+
+The server runs a preflight connection check on startup. If it fails, the
+server logs a warning and starts anyway (a transient network blip shouldn't
+prevent the MCP channel from opening) — individual tools then report the
+specific connectivity error when invoked. If tools consistently fail to reach
+pfSense, check:
+1. Is `PFSENSE_URL` correct and reachable from this machine?
+2. Is the REST API package installed and enabled at **System > REST API**?
+3. Is your chosen auth method enabled on the REST API settings page?
+4. For `api_key` auth: is the key valid? (generate at System > REST API > Keys)
+5. For `basic`/`jwt` auth: are the username and password correct for a local database user?
+6. Does the user have sufficient privileges in **System > User Manager**?
+7. If the handshake fails on pfSense's self-signed certificate, export its CA
+   at **System > Cert. Manager > CAs** and set `PFSENSE_CA_FILE` to the PEM.
+   `VERIFY_SSL=false` also works but stops authenticating the firewall.
+
+## Maintenance
+
+The REST API package must be reinstalled after pfSense system upgrades. After upgrading pfSense, re-run the install command with the package matching your new version.
+
+## Resources
+
+- REST API package: https://github.com/pfrest/pfSense-pkg-RESTAPI
+- API documentation: https://pfrest.org/
+- Interactive Swagger UI: `https://your-pfsense.local/api/v2/documentation`
