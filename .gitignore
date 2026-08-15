@@ -13,3 +13,4 @@ __pycache__/
 *.tmp
 site/
 .DS_Store
+/.skogai/config/script_metadata.json
